@@ -30,3 +30,56 @@ function depsAreSame(oldDeps: DependencyList, deps: DependencyList): boolean {
       //+0 与 -0 被认为是不相等的。
      /// ===正好相反
 ```
+
+```typescript
+// 限制单位时间内 fn执行一次
+function limit(fn: any, timespan: number) {
+  let pending = false;
+  return (...args: any[]) => {
+    if (pending) return;
+    pending = true;
+    fn(...args);
+    setTimeout(() => {
+      pending = false;
+    }, timespan);
+  };
+}
+```
+
+```typescript 缓存相关
+const cache = new Map<CachedKey, RecordData>();
+
+const setCache = (key: CachedKey, cacheTime: number, cachedData: CachedData) => {
+  const currentCache = cache.get(key);
+  if (currentCache?.timer) {
+    clearTimeout(currentCache.timer);
+  }
+
+  let timer: Timer | undefined = undefined;
+
+  if (cacheTime > -1) { // 设置过期时间，过期自动清除
+    // if cache out, clear it
+    timer = setTimeout(() => {
+      cache.delete(key);
+    }, cacheTime);
+  }
+
+  cache.set(key, {
+    ...cachedData,
+    timer,
+  });
+};
+
+const getCache = (key: CachedKey) => { // 获取cache
+  return cache.get(key);
+};
+
+const clearCache = (key?: string | string[]) => { // 清除cache
+  if (key) {
+    const cacheKeys = Array.isArray(key) ? key : [key];
+    cacheKeys.forEach((cacheKey) => cache.delete(cacheKey));
+  } else {
+    cache.clear();
+  }
+};
+```

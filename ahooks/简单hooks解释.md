@@ -95,3 +95,74 @@ const useMount = (fn: () => void) => {
 
 ```
 
+```typescript
+// 组件加载的时候执行
+const useUnmount = (fn: () => void) => {
+  const fnRef = useLatest(fn); // 执行fn的最新值
+  useEffect(
+    () => () => {
+      fnRef.current();
+    },
+    [],
+  );
+}
+//组件卸载的时候执行
+const useUnmount = (fn: () => void) => {
+  const fnRef = useLatest(fn);
+  useEffect(
+    () => () => { // 返回destroy函数，组件卸载的时候会执行
+      fnRef.current();
+    },
+    [],
+  );
+};
+
+```
+
+```typescript
+// 传入的fn是最新的，会更新
+// 返回的fn不会更新，是最初的一个
+function useMemoizedFn<T extends noop>(fn: T) {
+  const fnRef = useRef<T>(fn);
+  // why not write `fnRef.current = fn`?
+  // https://github.com/alibaba/hooks/issues/728
+  // const cachedValue = useMemo(calculateValue, dependencies) deps变化重新计算
+  fnRef.current = useMemo<T>(() => fn, [fn]); // 保持fn为最新值
+  const memoizedFn = useRef<PickFunction<T>>();
+  if (!memoizedFn.current) {// 只会赋值一次
+    memoizedFn.current = function (this, ...args) {
+      return fnRef.current.apply(this, args);
+    };
+  }
+
+  return memoizedFn.current as T;
+}
+```
+
+```typescript
+// 和useEffect类似 ，第一次不执行effect
+ useUpdateEffect =  createUpdateEffect(useEffect);
+
+ const createUpdateEffect: (hook: EffectHookType) => EffectHookType =
+  (hook) => (effect, deps) => {
+    const isMounted = useRef(false);
+
+    // for react-refresh
+    hook(() => { // 组件卸载触发 重新计算是否是第一次mounted
+      return () => {
+        isMounted.current = false;
+      };
+    }, []);
+
+    hook(() => {
+      if (!isMounted.current) { // 第一次efffect不执行
+        isMounted.current = true;
+      } else {
+        return effect(); //执行deps更新后的effect
+      }
+    }, deps);
+  };
+
+
+```
+
