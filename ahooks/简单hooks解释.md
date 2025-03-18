@@ -166,3 +166,177 @@ function useMemoizedFn<T extends noop>(fn: T) {
 
 ```
 
+### useSetState
+
+```typescript
+const useSetState = <S extends Record<string, any>>(
+  initialState: S | (() => S),
+): [S, SetState<S>] => {
+  const [state, setState] = useState<S>(initialState);
+
+  const setMergeState = useMemoizedFn((patch) => { // 缓存函数，函数不变值不变
+    setState((prevState) => { // 判断patch是不是函数，是函数就执行，否则直接返回patch
+      const newState = isFunction(patch) ? patch(prevState) : patch;
+      return newState ? { ...prevState, ...newState } : prevState; //合并state
+    });
+  });
+
+  return [state, setMergeState];
+};
+```
+
+### useUrlState
+
+```typescript
+const useUrlState = <S extends UrlState = UrlState>(
+  initialState?: S | (() => S),
+  options?: Options,
+) => {
+  type State = Partial<{ [key in keyof S]: any }>; // key-value格式
+  const { navigateMode = 'push', parseOptions, stringifyOptions } = options || {};
+
+  const mergedParseOptions = { ...baseParseConfig, ...parseOptions };
+  const mergedStringifyOptions = { ...baseStringifyConfig, ...stringifyOptions };
+
+  // react-router rc
+  const location = rc.useLocation();
+
+  // react-router v5
+  const history = rc.useHistory?.();
+  // react-router v6
+  const navigate = rc.useNavigate?.();
+
+  const update = useUpdate();
+
+  const initialStateRef = useRef( // 初始值
+    typeof initialState === 'function' ? (initialState as () => S)() : initialState || {},
+  );
+
+  const queryFromUrl = useMemo(() => { // 从url中解析出来的值query
+    return qs.parse(location.search, mergedParseOptions);
+  }, [location.search]);
+
+  const targetQuery: State = useMemo(  // 合并初始值和url中解析出来的值
+    () => ({
+      ...initialStateRef.current,
+      ...queryFromUrl,
+    }),
+    [queryFromUrl],
+  );
+
+  const setState = (s: React.SetStateAction<State>) => { 
+    const newQuery = typeof s === 'function' ? s(targetQuery) : s; // 支持函数传参
+
+    // 1. 如果 setState 后，search 没变化，就需要 update 来触发一次更新。比如 demo1 直接点击 clear，就需要 update 来触发更新。
+    // 2. update 和 history 的更新会合并，不会造成多次更新
+    update();
+    if (history) {
+      history[navigateMode](
+        {
+          hash: location.hash,
+          search: qs.stringify({ ...queryFromUrl, ...newQuery }, mergedStringifyOptions) || '?',
+        },
+        location.state,
+      );
+    }
+    if (navigate) {
+      navigate(
+        {
+          hash: location.hash,
+          search: qs.stringify({ ...queryFromUrl, ...newQuery }, mergedStringifyOptions) || '?',
+        },
+        {
+          replace: navigateMode === 'replace',
+          state: location.state,
+        },
+      );
+    }
+  };
+
+  return [targetQuery, useMemoizedFn(setState)] as const;
+};
+```
+
+
+### useCookieState
+  
+```typescript
+// 自动读取和设置cookies
+function useCookieState(cookieKey: string, options: Options = {}) {
+  const [state, setState] = useState<State>(() => { // 初始化state
+    const cookieValue = Cookies.get(cookieKey);
+
+    if (isString(cookieValue)) return cookieValue;
+
+    if (isFunction(options.defaultValue)) {
+      return options.defaultValue();
+    }
+
+    return options.defaultValue;
+  });
+
+  const updateState = useMemoizedFn( // 更新state
+    (
+      newValue: State | ((prevState: State) => State),
+      newOptions: Cookies.CookieAttributes = {},
+    ) => {
+      const { defaultValue, ...restOptions } = { ...options, ...newOptions };
+      const value = isFunction(newValue) ? newValue(state) : newValue;
+
+      setState(value);
+
+      if (value === undefined) {
+        Cookies.remove(cookieKey);
+      } else {
+        Cookies.set(cookieKey, value, restOptions);
+      }
+    },
+  );
+
+  return [state, updateState] as const; // 类型收窄，返回一个只读的数组
+}
+```
+
+```typescript
+/// 参考useMap
+function useSet<K>(initialValue?: Iterable<K>) {
+  const getInitValue = () => new Set(initialValue);
+  const [set, setSet] = useState<Set<K>>(getInitValue);
+
+  const add = (key: K) => {
+    if (set.has(key)) {
+      return;
+    }
+    setSet((prevSet) => {
+      const temp = new Set(prevSet);
+      temp.add(key);
+      return temp;
+    });
+  };
+
+  const remove = (key: K) => {
+    if (!set.has(key)) {
+      return;
+    }
+    setSet((prevSet) => {
+      const temp = new Set(prevSet);
+      temp.delete(key);
+      return temp;
+    });
+  };
+
+  const reset = () => setSet(getInitValue());
+
+  return [
+    set,
+    {
+      add: useMemoizedFn(add),
+      remove: useMemoizedFn(remove),
+      reset: useMemoizedFn(reset),
+    },
+  ] as const;
+}
+
+```
+
+
