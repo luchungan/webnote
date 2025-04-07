@@ -340,3 +340,12 @@ function useSet<K>(initialValue?: Iterable<K>) {
 ```
 
 
+```typescript
+
+function say(a:string){
+  return a
+}
+
+```
+
+
